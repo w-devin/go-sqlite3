@@ -24,6 +24,7 @@ package sqlite3
 #cgo linux,!android CFLAGS: -DHAVE_PREAD64=1 -DHAVE_PWRITE64=1
 #cgo openbsd CFLAGS: -I/usr/local/include
 #cgo openbsd LDFLAGS: -L/usr/local/lib
+#cgo amd64 CFLAGS: -maes -msse4.1
 #ifndef USE_LIBSQLITE3
 #include "sqlite3-binding.h"
 #else
@@ -1023,11 +1024,24 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
 //     Default or disabled the LIKE operation is case-insensitive.
 //     When enabling this options behaviour of LIKE will become case-sensitive.
 //
+//   _cipher=X
+//     Selects the cipher to be used for encrypting the database.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher
+//
 //   _defer_foreign_keys=Boolean | _defer_fk=Boolean
 //     Defer Foreign Keys until outermost transaction is committed.
 //
 //   _foreign_keys=Boolean | _fk=Boolean
 //     Enable or disable enforcement of foreign keys.
+//
+//   _hmac_check=Boolean
+//     Selects whether the HMAC should be validated on read operations for encryption
+//     schemes using HMACs.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check
+//
+//   _hmac_use=Boolean
+//     Enable or disable the use of per-page HMACs for the cipher scheme SQLCipher.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use
 //
 //   _ignore_check_constraints=Boolean
 //     This pragma enables or disables the enforcement of CHECK constraints.
@@ -1037,10 +1051,31 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
 //     Set journal mode for the databases associated with the current connection.
 //     https://www.sqlite.org/pragma.html#pragma_journal_mode
 //
+//   _key=X
+//     Sets the database encryption key.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
+//
+//   _legacy=X
+//     Defines the legacy mode for a cipher scheme.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy
+//
+//   _legacy_page_size=X
+//     Specifies the database page size to be used in legacy mode for a cipher scheme.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size
+//
 //   _locking_mode=X | _locking=X
 //     Sets the database connection locking-mode.
 //     The locking-mode is either NORMAL or EXCLUSIVE.
 //     https://www.sqlite.org/pragma.html#pragma_locking_mode
+//
+//   _mc_legacy_wal=Boolean
+//     Selects whether the legacy mode for the WAL journal encryption should be used.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal
+//
+//   _plaintext_header_size=X
+//     Allocates a portion of the database header which will not be encrypted to allow
+//     identification as an SQLite database.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size
 //
 //   _query_only=Boolean
 //     The query_only pragma prevents all changes to database files when enabled.
@@ -1083,11 +1118,19 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 	autoVacuum := -1
 	busyTimeout := 5000
 	caseSensitiveLike := -1
+	var cipher string
 	deferForeignKeys := -1
 	foreignKeys := -1
+	hmacCheck := -1
+	hmacUse := -1
 	ignoreCheckConstraints := -1
 	var journalMode string
+	var key string
+	legacy := -1
+	legacyPageSize := -1
 	lockingMode := "NORMAL"
+	mcLegacyWAL := -1
+	plaintextHeaderSize := -1
 	queryOnly := -1
 	recursiveTriggers := -1
 	secureDelete := "DEFAULT"
@@ -1224,6 +1267,19 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			}
 		}
 
+		// Cipher (_cipher)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher
+		//
+		if val := params.Get("_cipher"); val != "" {
+			switch strings.ToLower(val) {
+			case "aes128cbc", "aes256cbc", "chacha20", "sqlcipher", "rc4":
+				cipher = strings.ToLower(val)
+			default:
+				return nil, fmt.Errorf("Invalid _cipher: %v, expecting value of 'aes128cbc aes256cbc chacha20 sqlcipher rc4'", val)
+			}
+		}
+
 		// Defer Foreign Keys (_defer_foreign_keys | _defer_fk)
 		//
 		// https://www.sqlite.org/pragma.html#pragma_defer_foreign_keys
@@ -1268,6 +1324,36 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			}
 		}
 
+		// Check HMAC (_hmac_check)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check
+		//
+		if val := params.Get("_hmac_check"); val != "" {
+			switch strings.ToLower(val) {
+			case "0", "no", "false", "off":
+				hmacCheck = 0
+			case "1", "yes", "true", "on":
+				hmacCheck = 1
+			default:
+				return nil, fmt.Errorf("Invalid _hmac_check: %v, expecting boolean value of '0 1 false true no yes off on'", val)
+			}
+		}
+
+		// Use HMAC (_hmac_use)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use
+		//
+		if val := params.Get("_hmac_use"); val != "" {
+			switch strings.ToLower(val) {
+			case "0", "no", "false", "off":
+				hmacUse = 0
+			case "1", "yes", "true", "on":
+				hmacUse = 1
+			default:
+				return nil, fmt.Errorf("Invalid _hmac_use: %v, expecting boolean value of '0 1 false true no yes off on'", val)
+			}
+		}
+
 		// Ignore CHECK Constrains (_ignore_check_constraints)
 		//
 		// https://www.sqlite.org/pragma.html#pragma_ignore_check_constraints
@@ -1309,6 +1395,52 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			}
 		}
 
+		// Encryption Key (_key)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
+		//
+		if val := params.Get("_key"); val != "" {
+			switch {
+			case strings.Contains(val, `'`) && strings.Contains(val, `"`):
+				return nil, errors.New("Invalid key provided, cannot contain both ' and \"")
+			case strings.Contains(val, `'`):
+				key = fmt.Sprintf(`"%s"`, val)
+			default:
+				key = fmt.Sprintf(`'%s'`, val)
+			}
+		}
+
+		// Legacy (_legacy)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy
+		//
+		if val := params.Get("_legacy"); val != "" {
+			switch strings.ToLower(val) {
+			case "0", "no", "false", "off":
+				legacy = 0
+			case "1", "yes", "true", "on":
+				legacy = 1
+			default:
+				iv, err := strconv.ParseInt(val, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("Invalid _legacy: %v: %v", val, err)
+				}
+				legacy = int(iv)
+			}
+		}
+
+		// Legacy Page Size (_legacy_page_size)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size
+		//
+		if val := params.Get("_legacy_page_size"); val != "" {
+			iv, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid _legacy_page_size: %v: %v", val, err)
+			}
+			legacyPageSize = int(iv)
+		}
+
 		// Locking Mode (_locking)
 		//
 		// https://www.sqlite.org/pragma.html#pragma_locking_mode
@@ -1327,6 +1459,33 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			default:
 				return nil, fmt.Errorf("Invalid _locking_mode: %v, expecting value of 'NORMAL EXCLUSIVE", val)
 			}
+		}
+
+		// Legacy mode for the WAL journal encryption (_mc_legacy_wal)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal
+		//
+		if val := params.Get("_mc_legacy_wal"); val != "" {
+			switch strings.ToLower(val) {
+			case "0", "no", "false", "off":
+				mcLegacyWAL = 0
+			case "1", "yes", "true", "on":
+				mcLegacyWAL = 1
+			default:
+				return nil, fmt.Errorf("Invalid _mc_legacy_wal: %v, expecting boolean value of '0 1 false true no yes off on'", val)
+			}
+		}
+
+		// Plaintext Header Size (_plaintext_header_size)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size
+		//
+		if val := params.Get("_plaintext_header_size"); val != "" {
+			iv, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid _plaintext_header_size: %v: %v", val, err)
+			}
+			plaintextHeaderSize = int(iv)
 		}
 
 		// Query Only (_query_only)
@@ -1471,6 +1630,70 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			return lastError(db)
 		}
 		return nil
+	}
+
+	// Cipher
+	if cipher != "" {
+		if err := exec(fmt.Sprintf("PRAGMA cipher = %s;", cipher)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Check HMAC
+	if hmacCheck > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA hmac_check = %d;", hmacCheck)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Use HMAC
+	if hmacUse > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA hmac_use = %d;", hmacUse)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Legacy
+	if legacy > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA legacy = %d;", legacy)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Legacy Page Size
+	if legacyPageSize > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA legacy_page_size = %d;", legacyPageSize)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Legacy mode for the WAL journal encryption
+	if mcLegacyWAL > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA mc_legacy_wal = %d;", mcLegacyWAL)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Plaintext Header Size
+	if plaintextHeaderSize > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA plaintext_header_size = %d;", plaintextHeaderSize)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// Encryption key
+	if key != "" {
+		if err := exec(fmt.Sprintf("PRAGMA key = %s;", key)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
 	}
 
 	// Busy timeout

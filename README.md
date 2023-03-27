@@ -43,9 +43,11 @@ This package follows the official [Golang Release Policy](https://golang.org/doc
   - [macOS](#mac-osx)
   - [Windows](#windows)
   - [Errors](#errors)
-- [User Authentication](#user-authentication)
-  - [Compile](#compile)
+- [Encryption](#encryption)
   - [Usage](#usage-1)
+- [User Authentication](#user-authentication)
+  - [Compile](#compile-1)
+  - [Usage](#usage-2)
     - [Create protected database](#create-protected-database)
     - [Password Encoding](#password-encoding)
       - [Available Encoders](#available-encoders)
@@ -109,12 +111,20 @@ Boolean values can be one of:
 | Auto Vacuum | `_auto_vacuum` \| `_vacuum` | <ul><li>`0` \| `none`</li><li>`1` \| `full`</li><li>`2` \| `incremental`</li></ul> | For more information see [PRAGMA auto_vacuum](https://www.sqlite.org/pragma.html#pragma_auto_vacuum) |
 | Busy Timeout | `_busy_timeout` \| `_timeout` | `int` | Specify value for sqlite3_busy_timeout. For more information see [PRAGMA busy_timeout](https://www.sqlite.org/pragma.html#pragma_busy_timeout) |
 | Case Sensitive LIKE | `_case_sensitive_like` \| `_cslike` | `boolean` | For more information see [PRAGMA case_sensitive_like](https://www.sqlite.org/pragma.html#pragma_case_sensitive_like) |
+| Cipher | `_cipher` | `string` | Selects the cipher to be used for encrypting the database, for more information see [PRAGMA cipher](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-cipher) |
 | Defer Foreign Keys | `_defer_foreign_keys` \| `_defer_fk` | `boolean` | For more information see [PRAGMA defer_foreign_keys](https://www.sqlite.org/pragma.html#pragma_defer_foreign_keys) |
 | Foreign Keys | `_foreign_keys` \| `_fk` | `boolean` | For more information see [PRAGMA foreign_keys](https://www.sqlite.org/pragma.html#pragma_foreign_keys) |
+| Check HMAC | `_hmac_check` | `boolean` | Selects whether the HMAC should be validated on read operations for encryption schemes using HMACs, for more information see [PRAGMA hmac_check](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_check) |
+| Use HMAC | `_hmac_use` | `boolean` | Enable or disable the use of per-page HMACs for the cipher scheme SQLCipher, for more information see [PRAGMA hmac_use](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-hmac_use) |
 | Ignore CHECK Constraints | `_ignore_check_constraints` | `boolean` | For more information see [PRAGMA ignore_check_constraints](https://www.sqlite.org/pragma.html#pragma_ignore_check_constraints) |
 | Immutable | `immutable` | `boolean` | For more information see [Immutable](https://www.sqlite.org/c3ref/open.html) |
 | Journal Mode | `_journal_mode` \| `_journal` | <ul><li>DELETE</li><li>TRUNCATE</li><li>PERSIST</li><li>MEMORY</li><li>WAL</li><li>OFF</li></ul> | For more information see [PRAGMA journal_mode](https://www.sqlite.org/pragma.html#pragma_journal_mode) |
+| Encryption key | `_key` | `string` | Sets the database encryption key, for more information see [PRAGMA key](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key) |
+| Legacy | `_legacy` | `int` | Defines the legacy mode for a cipher scheme, for more information see [PRAGMA legacy](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy) |
+| Legacy page size | `_legacy_page_size` | `int` | Specifies the database page size to be used in legacy mode for a cipher scheme, for more information see [PRAGMA legacy_page_size](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-legacy_page_size) |
 | Locking Mode | `_locking_mode` \| `_locking` | <ul><li>NORMAL</li><li>EXCLUSIVE</li></ul> | For more information see [PRAGMA locking_mode](https://www.sqlite.org/pragma.html#pragma_locking_mode) |
+| MC Legacy WAL | `_mc_legacy_wal` | `boolean` | Selects whether the legacy mode for the WAL journal encryption should be used, for more information see [PRAGMA mc_legacy_wal](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-mc_legacy_wal) |
+| Plaintext header size | `_plaintext_header_size` | `int` | Allocates a portion of the database header which will not be encrypted to allow identification as an SQLite database, for more information see [PRAGMA plaintext_header_size](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-plaintext_header_size) |
 | Mode | `mode` | <ul><li>ro</li><li>rw</li><li>rwc</li><li>memory</li></ul> | Access Mode of the database. For more information see [SQLite Open](https://www.sqlite.org/c3ref/open.html) |
 | Mutex Locking | `_mutex` | <ul><li>no</li><li>full</li></ul> | Specify mutex mode. |
 | Query Only | `_query_only` | `boolean` | For more information see [PRAGMA query_only](https://www.sqlite.org/pragma.html#pragma_query_only) |
@@ -353,6 +363,13 @@ For example the TDM-GCC Toolchain can be found [here](https://jmeubank.github.io
     ```bash
     go install github.com/mattn/go-sqlite3
     ```
+
+# Encryption
+
+## Usage
+
+Pass your encryption key via the `_key` argument in the connection string.
+See the [SQLite3MultipleCiphers documentation](https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key) for more details.
 
 # User Authentication
 
@@ -594,7 +611,7 @@ sqlite3-binding.c, sqlite3-binding.h, sqlite3ext.h
 
 The -binding suffix was added to avoid build failures under gccgo.
 
-In this repository, those files are an amalgamation of code that was copied from SQLite3. The license of that code is the same as the license of SQLite3.
+In this repository, those files are an amalgamation of code that was copied from SQLite3 and SQLite3MultipleCiphers. The license of that code is the same as the licenses of SQLite3 and SQLite3MultipleCiphers.
 
 # Author
 
