@@ -1657,6 +1657,14 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 		}
 	}
 
+	// Legacy
+	if legacy > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA legacy = %d;", legacy)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
 	// Check HMAC
 	if hmacCheck > -1 {
 		if err := exec(fmt.Sprintf("PRAGMA hmac_check = %d;", hmacCheck)); err != nil {
@@ -1676,14 +1684,6 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 	// KDF Iter
 	if kdfIter > -1 {
 		if err := exec(fmt.Sprintf("PRAGMA kdf_iter = %d;", kdfIter)); err != nil {
-			C.sqlite3_close_v2(db)
-			return nil, err
-		}
-	}
-
-	// Legacy
-	if legacy > -1 {
-		if err := exec(fmt.Sprintf("PRAGMA legacy = %d;", legacy)); err != nil {
 			C.sqlite3_close_v2(db)
 			return nil, err
 		}
