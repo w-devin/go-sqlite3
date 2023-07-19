@@ -1051,6 +1051,10 @@ func (c *SQLiteConn) begin(ctx context.Context) (driver.Tx, error) {
 //     Set journal mode for the databases associated with the current connection.
 //     https://www.sqlite.org/pragma.html#pragma_journal_mode
 //
+//   _kdf_iter=X
+//     Specifies the number of iterations used for key derivation.
+//     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#kdf_iter
+//
 //   _key=X
 //     Sets the database encryption key.
 //     https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
@@ -1125,6 +1129,7 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 	hmacUse := -1
 	ignoreCheckConstraints := -1
 	var journalMode string
+	kdfIter := -1
 	var key string
 	legacy := -1
 	legacyPageSize := -1
@@ -1395,6 +1400,18 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 			}
 		}
 
+		// KDF iterations (_kdf_iter)
+		//
+		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-kdf_iter
+		//
+		if val := params.Get("_kdf_iter"); val != "" {
+			iv, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid _kdf_iter: %v: %v", val, err)
+			}
+			kdfIter = int(iv)
+		}
+
 		// Encryption Key (_key)
 		//
 		// https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key
@@ -1651,6 +1668,14 @@ func (d *SQLiteDriver) Open(dsn string) (driver.Conn, error) {
 	// Use HMAC
 	if hmacUse > -1 {
 		if err := exec(fmt.Sprintf("PRAGMA hmac_use = %d;", hmacUse)); err != nil {
+			C.sqlite3_close_v2(db)
+			return nil, err
+		}
+	}
+
+	// KDF Iter
+	if kdfIter > -1 {
+		if err := exec(fmt.Sprintf("PRAGMA kdf_iter = %d;", kdfIter)); err != nil {
 			C.sqlite3_close_v2(db)
 			return nil, err
 		}
